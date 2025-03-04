@@ -121,11 +121,13 @@ function is_word(s::String)::Bool
     resp = HTTP.get(url)
     if resp.status == 200
         res = JSON.parse(String(resp.body))
-        # if its not a word, api only returns Vector{String}
-        if length(res) == 0 || typeof(res[1]) == String
-            return false
+        # sometimes is returns a list of similar words. i think this is supposed to happen
+        # if your search doesnt get an exact hit and it is suggesting similar words.
+        # for some reaons, GULLY is bucking this trend.
+        if typeof(res[1]) == String && lowercase(s) in res
+            return true
         # otherwise, it returns a dict. see if word is in stems
-        elseif lowercase(s) in res[1]["meta"]["stems"]
+        elseif typeof(res[1]) == Dict{String, Any} && lowercase(s) in res[1]["meta"]["stems"]
             return true
         end
         return false
@@ -133,14 +135,12 @@ function is_word(s::String)::Bool
 end
 
 function main()
-    # TODO not working for this:
-    # julia wordathlon-helper.jl -s "G****" -p YYYOLLLUGK
     env_vars()
     args = handle_args()
-    test_strings = generate_test_strings(args["solution-string"], args["pool"])
-    #test_strings = filter_bad_strings(test_strings)
+    test_strings = unique(generate_test_strings(args["solution-string"], args["pool"]))
+    test_strings = filter_bad_strings(test_strings)
     test_strings = filter!(s -> is_word(s), test_strings)
-    println("Possible words:")
+    println("Try these words")
     for s in test_strings
         println(s)
     end
