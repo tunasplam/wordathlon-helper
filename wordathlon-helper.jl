@@ -24,7 +24,6 @@ This should be a commandline tool
 4. print out list of possible words.
     - Bonus: color the letters we already have (neat little touch)
 
-# TODO cache previously seen words
 =#
 
 using ArgParse
@@ -33,12 +32,14 @@ using DotEnv
 using HTTP
 using JSON
 
-impossible_combos = [
+const impossible_combos = [
     "BX", "CJ", "CV", "CX", "DX", "FQ", "FX", "GQ", "GX", "HX", "JC", "JF", "JG", "JQ", "JS",
     "JV", "JW", "JX", "JZ", "KQ", "KX", "MX", "PX", "PZ", "QB", "QC", "QD", "QF", "QG", "QH",
     "QJ", "QK", "QL", "QM", "QN", "QP", "QS", "QT", "QV", "QW", "QX", "QY", "QZ", "SX", "VB",
     "VF", "VH", "VJ", "VM", "VP", "VQ", "VT", "VW", "VX", "WX", "XJ", "XX", "ZJ", "ZQ", "ZX"
 ]
+
+const cache_fp = ENV["HOME"] * "/.cache/wordathlon-helper/cache.json"
 
 function env_vars()
     env_fp = ENV["HOME"] * "/.config/wordathlon-helper/.env"
@@ -47,6 +48,7 @@ function env_vars()
         @assert haskey(ENV, "DICTIONARY_API_KEY")
     catch SystemError
         mkdir(ENV["HOME"] * "/.config/wordathlon-helper")
+        mkdir(ENV["HOME"] * "/.cache/wordathlon-helper")
         cp(".env.sample", env_fp)
         println("Navigate to ~/.config/wordathlon-helper/.env and put in your API key.")
         exit()
@@ -113,33 +115,63 @@ function filter_bad_strings(test_strings::Vector{String})::Vector{String}
     return filter(s -> ! any(occursin(combo, s) for combo in impossible_combos), test_strings)
 end
 
-function is_word(s::String)::Bool
+function is_word(s::String, api_key::String)::Bool
     #=The app uses Meriam Webster dictionary so hitting their api to see if strings are words.
     =#
-    api_key = get(ENV, "DICTIONARY_API_KEY", nothing)
-    url = "https://www.dictionaryapi.com/api/v3/references/collegiate/json/$(lowercase(s))?key=$(api_key)"
-    resp = HTTP.get(url)
-    if resp.status == 200
-        res = JSON.parse(String(resp.body))
-        # sometimes is returns a list of similar words. i think this is supposed to happen
-        # if your search doesnt get an exact hit and it is suggesting similar words.
-        # for some reaons, GULLY is bucking this trend.
-        if typeof(res[1]) == String && lowercase(s) in res
-            return true
-        # otherwise, it returns a dict. see if word is in stems
-        elseif typeof(res[1]) == Dict{String, Any} && lowercase(s) in res[1]["meta"]["stems"]
-            return true
-        end
-        return false
+    res = cached_api_call(s, api_key)
+    # sometimes is returns a list of similar words. i think this is supposed to happen
+    # if your search doesnt get an exact hit and it is suggesting similar words.
+    # for some reaons, GULLY is bucking this trend.
+    if typeof(res[1]) == String && lowercase(s) in res
+        return true
+    # otherwise, it returns a dict. see if word is in stems
+    elseif typeof(res[1]) == Dict{String, Any} && lowercase(s) in res[1]["meta"]["stems"]
+        return true
+    end
+    return false
+end
+
+#=
+These functions below are related to cached api calls. They go in ~/.cache/wordathlon-helper/cache.json
+=#
+
+function load_cache()
+    return isfile(cache_fp) ? JSON.parsefile(cache_fp) : Dict()
+end
+
+function save_cache(cache::Dict)
+    open(cache_fp, "w") do f
+        JSON.print(f, cache)
     end
 end
 
+function cached_api_call(s::String, api_key::String)::Union{Vector, Dict}
+    cache = load_cache()
+    url = "https://www.dictionaryapi.com/api/v3/references/collegiate/json/$(lowercase(s))?key=$(api_key)"
+
+    if haskey(cache, url)
+        return cache[url]
+    else
+        resp = HTTP.get(url)
+        if resp.status == 200
+            res = JSON.parse(String(resp.body))
+            cache[url] = res
+            # TODO could optimize by saving cache at end of program rather than each uncached api call
+            save_cache(cache)
+            return res
+        end
+
+    end
+end
+
+
 function main()
     env_vars()
+    api_key = get(ENV, "DICTIONARY_API_KEY", nothing)
     args = handle_args()
     test_strings = unique(generate_test_strings(args["solution-string"], args["pool"]))
     test_strings = filter_bad_strings(test_strings)
-    test_strings = filter!(s -> is_word(s), test_strings)
+    test_strings = filter!(s -> is_word(s, api_key), test_strings)
     println("Try these words")
     for s in test_strings
         println(s)
