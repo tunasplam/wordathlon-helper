@@ -22,6 +22,9 @@ Possible words:
 DEALT
 ```
 
+### Notes
+API calls are limited 1000 per day for free tier. However, they are cached so if you enter in a word and it unlocks a hint, if you rerun with the new information then all API calls on the rerun should be cache hits.
+
 ## Setup
 
 ### Install required packages in REPL
