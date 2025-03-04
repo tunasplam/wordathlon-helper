@@ -13,6 +13,15 @@ optional arguments:
   -h, --help            show this help message and exit
 ```
 
+### Sample run
+
+`julia wordathlon-helper.jl -s "D**L*" -p DFFEALT`
+
+```
+Possible words:
+DEALT
+```
+
 ## Setup
 
 ### Install required packages in REPL
