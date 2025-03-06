@@ -1,29 +1,20 @@
 #=
 Because sometimes im super certain that things are not actually words.
 
-Everything is 5 letters.
-We have some letters solved already and we have a pool of potential letters.
-We are pretty sure all words are in Merriam Webster, which conventiently
-has an API: https://dictionaryapi.com/. Note that we only get 1000 free
-queries per day.
+TODO this is now really slow
 
-This should be a commandline tool
+TODO well, ACKEE was just found to work in wordathlon
+Meriam webster does not say its a word
+furthermore, the "define word" button mysterious disappeared
+after submitting ackee. So, I am thinking that we migrate
+to a new strategy:
 
-1. Accept inputs
-    - solution string: "G****" , "*A**S*" , "*****", et.c
-    - pool of letters, repeats allowed. YYYOLUGK
-
-2. Creates all possible combinations of the letter
-    - worst case scenario "*****" gives 120 possible words.
-    - I am sure we can pre filter them out against letter combinations
-    that are never present in the english language (might be a fun bit
-    of research).
-
-3. Filter out non-words by hitting dictionaryapi.
-
-4. print out list of possible words.
-    - Bonus: color the letters we already have (neat little touch)
-
+1. scan meriam webseter
+2. probability model
+3. scan the gigantic 1-billion word lookup for what works
+    -> you could probably somehow save the 1-billion word
+    corpus into a BST or something. store it in a database
+    with btree inde.
 =#
 
 using ArgParse
@@ -99,7 +90,7 @@ function generate_test_strings(s::String, p::String)::Vector{String}
     end
 
     res = []
-    for comb in combinations(p, nfree)
+    for comb in permutations(p, nfree)
         # determine indicies of free chars. then sub in chars of comb
         s_i = collect(s)
         for (i, j) in enumerate(findall(c -> c == '*', s))
@@ -112,6 +103,12 @@ end
 
 function filter_bad_strings(test_strings::Vector{String})::Vector{String}
     # TODO this could certainly be improved
+    #=
+    So this is actually a non-trivial problem. bigrams, sure, thatll work. we could
+    also probably maybe include trigrams. but in all honesty, this isnt going to happen.
+    =#
+
+    # to bring in all words.
     return filter(s -> ! any(occursin(combo, s) for combo in impossible_combos), test_strings)
 end
 
@@ -119,11 +116,17 @@ function is_word(s::String, api_key::String)::Bool
     #=The app uses Meriam Webster dictionary so hitting their api to see if strings are words.
     =#
     res = cached_api_call(s, api_key)
-    # sometimes is returns a list of similar words. i think this is supposed to happen
-    # if your search doesnt get an exact hit and it is suggesting similar words.
+
+    # if its utter gibberish and there are no suggestions then this triggers
+    if length(res) == 0
+        return false
+
+    # sometimes is returns a list of similar words. this happens if
+    # your search doesnt get an exact hit and it is suggesting similar words.
     # for some reaons, GULLY is bucking this trend.
-    if typeof(res[1]) == String && lowercase(s) in res
+    elseif typeof(res[1]) == String && lowercase(s) in res
         return true
+
     # otherwise, it returns a dict. see if word is in stems
     elseif typeof(res[1]) == Dict{String, Any} && lowercase(s) in res[1]["meta"]["stems"]
         return true
@@ -132,7 +135,7 @@ function is_word(s::String, api_key::String)::Bool
 end
 
 #=
-These functions below are related to cached api calls. They go in ~/.cache/wordathlon-helper/cache.json
+These functions below are related to cached api calls.They go in ~/.cache/wordathlon-helper/cache.json
 =#
 
 function load_cache()
@@ -160,7 +163,6 @@ function cached_api_call(s::String, api_key::String)::Union{Vector, Dict}
             save_cache(cache)
             return res
         end
-
     end
 end
 
